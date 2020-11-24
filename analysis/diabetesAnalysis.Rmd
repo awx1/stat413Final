@@ -1,0 +1,34 @@
+---
+title: "diabetesAnalysis"
+author: "Alex Xiong"
+date: "11/24/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r warning=FALSE}
+setwd('./..')
+diabetes = read.csv(paste0(getwd(), "/data/diabetes.csv"), header = TRUE)
+diabetes$class <- ifelse(diabetes$class == "tested_positive", 1, 0)
+```
+
+```{r}
+x <- as.matrix(select(diabetes, -c(class)))
+y <- as.matrix(select(diabetes, c(class))) 
+
+lasso_diabetes <- cv.glmnet(x, y, family = "binomial")
+
+lambda_min <- lasso_diabetes$lambda.min
+
+lasso_fit <- glmnet(x, y,
+                    family = "binomial", lambda = lambda_min)
+
+lasso_fit$beta
+lambda_min
+plot(lasso_diabetes)
+sum(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
+```

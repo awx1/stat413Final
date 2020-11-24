@@ -14,6 +14,8 @@ library(dplyr)
 ```{r warning=FALSE}
 setwd('./..')
 steelPlates = read.csv(paste0(getwd(), "/data/steel-plates.csv"), header = TRUE)
+steelPlates$Class <- steelPlates$Class - 1
+steelPlates = select(steelPlates, -c(V28, V29, V30, V31, V32, V33))
 ```
 
 
@@ -44,3 +46,57 @@ deleteData <- function(data, response, percentLeft) {
 deleteData(steelPlates, "Class", 0.75)
 ```
 
+```{r warning=FALSE}
+table(steelPlates$Class)
+
+# Fit LASSO for feature selection
+
+x <- as.matrix(select(steelPlates, -c(Class)))
+y <- as.matrix(select(steelPlates, c(Class))) 
+
+lasso_steelplates <- cv.glmnet(x, y, family = "binomial", )
+
+lambda_min <- lasso_steelplates$lambda.min
+
+lasso_fit <- glmnet(x, y,
+                    family = "binomial", lambda = lambda_min)
+
+lasso_fit$beta
+lambda_min
+plot(lasso_steelplates)
+sum(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
+table(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0), y)
+
+```
+
+
+```{r}
+new_dummy_steelplates <- select(steelPlates, -c(V4, V8, V22))
+new_dummy_steelplates$Class <- as.factor(new_dummy_steelplates$Class)
+
+# Cross validation for random forest 
+mtry_vec <- c(2, 3, 4, 5, 6, 8, 10, 12)
+
+rf_steelplates_cv <- matrix(rep(0, length(mtry_vec) * 5), ncol = 5)
+
+count <- 1
+for(mt in mtry_vec){
+  
+  rf <- randomForest(Class ~., data = new_dummy_steelplates, mtry = mt, ntree = 600)
+
+  some <- rf$err.rate
+
+  ntree <- which.min(some[,1])
+  print(ntree)
+    
+  rf_steelplates_cv[count, ] <- c(mt, ntree, rf$err.rate[ntree,])
+    
+  count <- count + 1
+    
+    
+}
+
+pos_of_min_rf <- which.min(rf_steelplates_cv[, 3])
+
+rf_steelplates_cv[pos_of_min_rf, ]
+```
