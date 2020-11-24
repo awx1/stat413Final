@@ -1,0 +1,46 @@
+---
+title: "steel-plates-Analysis"
+author: "Alex Xiong"
+date: "11/23/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+
+```{r warning=FALSE}
+setwd('./..')
+steelPlates = read.csv(paste0(getwd(), "/data/steel-plates.csv"), header = TRUE)
+```
+
+
+```{r}
+#head(steelPlates)
+#summary(steelPlates)
+
+deleteData <- function(data, response, percentLeft) {
+  set.seed(1)
+
+    resp <- data[response]
+  data <- select(data, -all_of(response))
+  
+  rowNum <- nrow(data)
+  colNum <- ncol(data)
+  items = rowNum * colNum
+  itemsToDel = as.integer((1 - percentLeft) * items)
+  idxToDel = sample(1:items, itemsToDel)
+
+  for (idx in 1:itemsToDel) {
+    delRowNum <- (idxToDel[idx] - 1) %/% colNum + 1
+    delColNum <- idxToDel[idx] %% colNum + 1
+    data[delRowNum, delColNum] <- NA
+  }
+  merge(data, resp)
+}
+
+deleteData(steelPlates, "Class", 0.75)
+```
+
