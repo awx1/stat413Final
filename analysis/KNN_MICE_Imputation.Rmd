@@ -1,0 +1,396 @@
+---
+title: "KNN and MICE Analysis"
+author: "Michael Price"
+date: "11/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(mice)
+library(VIM)
+library(randomForest)
+library(gbm)
+```
+
+
+```{r}
+deleteData <- function(data, response, percentLeft) {
+  
+  resp <- data[response]
+  data <- select(data, -all_of(response))
+  
+  rowNum <- nrow(data)
+  colNum <- ncol(data)
+  items = rowNum * colNum
+  itemsToDel = as.integer((1 - percentLeft) * items)
+  
+  dim_data <- dim(data)
+  
+  all_possible <- expand.grid(1:dim_data[1], 1:dim_data[2])
+  
+  sample_NA <- sample(1:dim(all_possible)[1], itemsToDel)
+  
+  for (samp in sample_NA) {
+    delrowNum <- all_possible[samp, ][[1]]
+    delcolNum <- all_possible[samp, ][[2]]
+    data[[delrowNum, delcolNum]] <- NA
+  }
+  
+return(cbind(data, resp))
+}
+```
+
+```{r}
+
+
+change_Wage <- function(data_set){\
+  
+  # transfomation function for Wage 
+  dummy_wage <- dummy_cols(data_set, select_columns = c("maritl", "race",
+                "education", "jobclass", "health", "health_ins")) %>%
+  select(-c("maritl", "race",
+                "education", "jobclass", "health", "health_ins", 
+            "maritl_5. Separated", "race_4. Other", "education_5. Advanced Degree", 
+            "jobclass_2. Information", "health_2. >=Very Good", "health_ins_2. No"))
+  
+  new_dummy_wage <- select(dummy_wage, -c("race_2. Black"))
+  names(new_dummy_wage) <- c("year", "age", "logwage", "Never.Married",
+                           "Married", "Widowed", "Divorced", "White", "Asian", 
+                           "Not.HS.Grad", "HS.Grad", "Some.College", "College.Grad", 
+                           "Industrial", "Health.Not.Good", "health.ins")
+  
+  
+  return(new_dummy_wage)
+  
+}
+
+```
+
+
+```{r, warning = FALSE}
+
+KNN_Impute_Testing <- function(data, form_train, response, type, sim_number = 1000,
+                               training_split = 0.8, K = 5, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               clas_hyper = NULL, reg_hyper = NULL){
+  
+  
+# Testing KNN Imputation by randomly removing some data points, imputing using a 
+# knn-like procedure, and evaluating on a testing dataset 
+  
+# data - full complete dataset
+# form_train - formula for training
+# response - column name of response variable
+# type - regression or classification 
+# sim_number - number of simulations 
+# training_split - percentage of data used for testing 
+# K - K for KNN procedure
+# percentLeft - 1 - percentLeft will be the amount of datapoints removed
+# transformation - if TRUE, will perform a transformation on dataset after imputation
+# transformation_function - if transformation is TRUE, function that transforms complete data 
+# clas_hyper - list of classification hyperparameters if classification task 
+# reg_hyper - list of regression hyperparameters if regression task 
+  # (Must be of form list(mtry = ?, rf_trees = ?, depth_gbm = ?, gbm_trees = ?))
+  
+# Get dimensions of data 
+n <- dim(data)[1]
+p <- dim(data)[2]
+
+
+if (type == "regression"){
+  # Will contain the test MSE for each iteration
+  error_matrix <- as.data.frame(matrix(rep(0, sim_number *3), ncol = 3))
+  names(error_matrix) <- c("OLS MSE", "Random Forest MSE", "Gradient Boosting MSE")
+}
+
+if (type == "classification"){
+  # Will contain the classification error for each iteration
+}
+
+
+
+
+for (s in 1:sim_number){
+  
+  
+  print(s)
+  # Split training and testing
+  training_rows <- sample(1:n, as.integer(n * training_split))
+  training_set <- data[training_rows, ]
+  test_set <- data[-training_rows, ]
+  
+  # Put random NA values in training set 
+  NA_dataset <- deleteData(training_set, response, percentLeft)
+  
+  
+  # Impute using KNN
+  knn_impute_set <- kNN(NA_dataset, k = K)[, 1:p]
+  
+  # Transform Dataset 
+  if (transformation == TRUE){
+    knn_impute_set <- transformation_function(knn_impute_set)
+    test_set <- transformation_function(test_set)
+  }
+
+  # Get test set 
+  test_set_y <- as.matrix(test_set[response], ncol = 1)
+  
+  if (type == "regression"){
+    
+    # Least Squares
+    
+    # Perform OLS Regression, get predictions, and MSE
+    least_squares <- lm(form_train, data = knn_impute_set)
+    
+    ls_predict <- predict(least_squares, test_set)
+    
+    ls_mse <- mean((ls_predict - test_set_y)^2)
+    
+    # Random Forest 
+     
+    # Perform Random Forest, get predictions, and MSE
+    rf_knn <- randomForest(form_train, data = knn_impute_set, 
+                 ntree = reg_hyper$rf_trees, mtry = reg_hyper$mtry)
+    
+    rf_predict <- predict(rf_knn, newdata = test_set)
+    
+    rf_mse <- mean((rf_predict - test_set_y)^2)
+    
+    # Gradient Boosting 
+    
+    # Perform gradient boosting, get predictions, and MSE
+    gbm_knn <- gbm(form_train, distribution = "gaussian", data = knn_impute_set, 
+                   n.trees = reg_hyper$gbm_trees, interaction.depth = reg_hyper$depth_gbm, 
+                   shrinkage = 0.01)
+    
+    gbm_predict <- predict(gbm_knn, newdata = test_set, n.trees = reg_hyper$gbm_trees)
+    
+    gbm_mse <- mean((gbm_predict - test_set_y)^2)
+    
+    error_matrix[s, ] <- c(ls_mse, rf_mse, gbm_mse)
+    
+    
+    
+  }
+  
+  else{
+    
+    # Classification Models go here 
+  }
+  
+  
+
+}
+  
+  return(error_matrix)
+  
+                               }
+
+
+```
+
+
+```{r}
+MICE_Impute_Testing <- function(data, form_train, response, type, sim_number = 1000,
+                               training_split = 0.8, num_impute = 5, maxiter = 5, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               clas_hyper, reg_hyper){
+  
+  
+# Testing MICE Imputation by randomly removing some data points, imputing using a 
+# MICE procedure, and evaluating on a testing dataset 
+  
+# data - full complete dataset
+# form_train - formula for training
+# response - column name of response variable
+# type - regression or classification 
+# sim_number - number of simulations 
+# training_split - percentage of data used for testing 
+# num_impute - number of imputed datasets for MICE
+# maxiter - number of iterations for MICE
+# percentLeft - 1 - percentLeft will be the amount of datapoints removed
+# transformation - if TRUE, will perform a transformation on dataset after imputation
+# transformation_function - if transformation is TRUE, function that transforms complete data 
+# clas_hyper - list of classification hyperparameters if classification task 
+# reg_hyper - list of regression hyperparameters if regression task 
+# (Must be of form list(mtry = ?, rf_trees = ?, depth_gbm = ?, gbm_trees = ?)) 
+  
+  
+n <- dim(data)[1]
+p <- dim(data)[2]
+
+
+if (type == "regression"){
+  # Will contain the test MSE for each iteration
+  error_matrix <- as.data.frame(matrix(rep(0, sim_number *3), ncol = 3))
+  names(error_matrix) <- c("OLS MSE", "Random Forest MSE", "Gradient Boosting MSE")
+}
+
+
+if (type == "classification"){
+  # Will contain the classification error for each iteration
+}
+
+
+for (s in 1:sim_number){
+  
+  print(s)
+  
+  # Split into training and testing 
+  training_rows <- sample(1:n, as.integer(n * training_split))
+  training_set <- data[training_rows, ]
+  test_set <- data[-training_rows, ]
+  
+  # Get NA dataset 
+  NA_dataset <- deleteData(training_set, response, percentLeft)
+  
+  # Immpute using MICE
+  mice_object <- mice(NA_dataset, m = num_impute, maxit = maxiter, 
+                      printFlag = FALSE)
+  
+  # Will contain all imputed datasets 
+  impute_list <- list()
+  
+  
+  # Get datasets from MICE object, and perform transformations if necessary 
+  if (transformation == TRUE){
+    
+    for (j in 1:num_impute){
+      complete_data <- complete(mice_object, j)
+      transformed_data <- transformation_function(complete_data)
+      impute_list[[j]] <- transformed_data
+      
+    }
+    test_set <- transformation_function(test_set)
+  }
+  
+  else{
+    for (j in 1:num_impute){
+      complete_data <- complete(mice_object, j)
+      impute_list[[j]] <- complete_data
+      
+    }
+    
+  }
+  
+  # Get testing set
+  test_set_y <- as.matrix(test_set[response], ncol = 1)
+  
+  if (type == "regression"){
+    
+    # Least Squares
+    
+    # Train OLS on each of the datasets our prediction will be the average value
+    prediction_lse <- rep(0, dim(test_set_y)[1])
+    for (m_1 in 1:num_impute){
+      
+      least_squares <- lm(form_train, data = impute_list[[m_1]])
+      
+      ls_predict <- predict(least_squares, test_set)
+      
+      prediction_lse <- prediction_lse + ls_predict/num_impute
+    }
+   
+    lse_mse <- mean((prediction_lse - test_set_y)^2)
+    
+    # Random Forest 
+    
+    # Train Random Forest on each of the datasets our prediction will be the average value
+    prediction_rf <- rep(0, dim(test_set_y)[1])
+    
+    for (m_2 in 1:num_impute){
+      
+    rf_mice <- randomForest(form_train, data = impute_list[[m_2]], 
+                 ntree = reg_hyper$rf_trees, mtry = reg_hyper$mtry)
+    
+    rf_predict <- predict(rf_mice, newdata = test_set)
+    
+    
+    prediction_rf <- prediction_rf + rf_predict/num_impute
+    
+      
+    }
+    
+    rf_mse <- mean((prediction_rf - test_set_y)^2)
+    
+    # Gradient Boosting 
+    
+    # Train Gradient Boosting on each of the datasets our prediction will be the average value
+    prediction_gbm <- rep(0, dim(test_set_y)[1])
+    
+    for (m_3 in 1:num_impute){
+      
+    gbm_mice <- gbm(form_train, distribution = "gaussian", data = impute_list[[m_3]], 
+                   n.trees = reg_hyper$gbm_trees, interaction.depth = reg_hyper$depth_gbm, 
+                   shrinkage = 0.01)
+    
+    gbm_predict <- predict(gbm_mice, newdata = test_set, n.trees = reg_hyper$gbm_trees)
+    
+    
+    prediction_gbm <- prediction_gbm + gbm_predict/num_impute 
+      
+    }
+   
+    gbm_mse <- mean((prediction_gbm - test_set_y)^2)
+    
+    
+    # Put into error matrix 
+    error_matrix[s, ] <- c(lse_mse, rf_mse, gbm_mse)
+    
+    
+    
+  }
+  
+  else{
+    
+    # Classification tasks go here 
+  }
+  
+
+}
+  
+  return(error_matrix) }
+```
+
+```{r}
+
+
+# Test examples 
+sim_number <- 50
+training_split <- 0.8
+K <- 5
+form_train <- logwage ~. 
+response <- "logwage"
+percentLeft <- 0.95
+transformation <- TRUE
+type <- "regression"
+
+reg_hyper_1 <- list(mtry = 4, rf_trees = 500, depth_gbm = 6, gbm_trees = 467)
+
+test_knn_1 <- KNN_Impute_Testing(data = Wage, form_train = logwage ~.,
+                                 response = "logwage", type = "regression", sim_number = 1000,
+                               training_split = 0.8, K = 5, percentLeft = 0.95, 
+                               transformation = TRUE, transformation_function = change_Wage, 
+                               reg_hyper = reg_hyper_1)
+
+
+# MICE will take a LONG Time 
+
+test_MICE_1 <- MICE_Impute_Testing(data = Wage, form_train =logwage ~.,
+                                response = "logwage", type = "regression", sim_number = 10,
+                               training_split = 0.8, num_impute = 5, maxiter = 5, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               reg_hyper = reg_hyper_1)
+
+
+
+test_MICE_1
+```
+
+
