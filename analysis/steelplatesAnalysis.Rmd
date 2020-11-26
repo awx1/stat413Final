@@ -8,6 +8,19 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
+library(glmnet)
+
+library(missForest)
+library(gapminder)
+library(tidyverse)
+library(skimr)
+
+library(e1071)
+library(ISLR)
+
+library(gbm)
+
+library(class)
 ```
 
 
@@ -18,33 +31,6 @@ steelPlates$Class <- steelPlates$Class - 1
 steelPlates = select(steelPlates, -c(V28, V29, V30, V31, V32, V33))
 ```
 
-
-```{r}
-#head(steelPlates)
-#summary(steelPlates)
-
-deleteData <- function(data, response, percentLeft) {
-  set.seed(1)
-
-    resp <- data[response]
-  data <- select(data, -all_of(response))
-  
-  rowNum <- nrow(data)
-  colNum <- ncol(data)
-  items = rowNum * colNum
-  itemsToDel = as.integer((1 - percentLeft) * items)
-  idxToDel = sample(1:items, itemsToDel)
-
-  for (idx in 1:itemsToDel) {
-    delRowNum <- (idxToDel[idx] - 1) %/% colNum + 1
-    delColNum <- idxToDel[idx] %% colNum + 1
-    data[delRowNum, delColNum] <- NA
-  }
-  merge(data, resp)
-}
-
-deleteData(steelPlates, "Class", 0.75)
-```
 
 ```{r warning=FALSE}
 table(steelPlates$Class)
@@ -66,7 +52,6 @@ lambda_min
 plot(lasso_steelplates)
 sum(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
 table(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0), y)
-
 ```
 
 
@@ -87,16 +72,109 @@ for(mt in mtry_vec){
   some <- rf$err.rate
 
   ntree <- which.min(some[,1])
-  print(ntree)
     
   rf_steelplates_cv[count, ] <- c(mt, ntree, rf$err.rate[ntree,])
     
   count <- count + 1
-    
-    
 }
 
 pos_of_min_rf <- which.min(rf_steelplates_cv[, 3])
 
 rf_steelplates_cv[pos_of_min_rf, ]
+## Output
+## 12.00000000 231.00000000   0.16383308   0.07492114   0.33135215
 ```
+
+
+```{r}
+### Logistic Regression
+steelLogReg <- glm(Class ~ ., data = steelPlates, family = "binomial")
+#summary(wageLogReg)
+
+new_dummy_steelplates <- select(steelPlates, -c(V4, V8, V22))
+steelLogRegLasso <- glm(Class ~ ., data = new_dummy_steelplates, family = "binomial")
+#summary(wageLogRegLasso)
+
+table(ifelse(predict(steelLogReg) > 0, 1, 0), steelPlates$Class)
+table(ifelse(predict(steelLogRegLasso) > 0, 1, 0), new_dummy_steelplates$Class)
+```
+
+
+```{r}
+steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "linear", cost = 0.1)
+svm.pred <- predict(steelSVM, new_dummy_steelplates)
+table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+
+steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "polynomial", gamma=1, cost = 0.1)
+svm.pred <- predict(steelSVM, new_dummy_steelplates)
+table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+
+steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "radial", gamma=1, cost = 0.1)
+svm.pred <- predict(steelSVM, new_dummy_steelplates)
+table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+```
+
+
+```{r}
+# Perform gradient boosting, get predictions, and MSE
+gbm <- gbm(formula = Class ~ .,
+  distribution = "bernoulli",
+  data = new_dummy_steelplates,
+  n.trees = 10000,
+  interaction.depth = 1,
+  shrinkage = 0.01)
+    
+gbm_predict <- predict(gbm, newdata = new_dummy_steelplates)
+table(ifelse(gbm_predict > 0, 1, 0), new_dummy_steelplates$Class)
+```
+
+
+```{r}
+knn.predict <- knn(train = new_dummy_steelplates, test = new_dummy_steelplates, cl = new_dummy_steelplates$Class, k=16)
+table(knn.predict, new_dummy_steelplates$Class)
+```
+
+
+```{r}
+deleteData <- function(data, response, percentLeft) {
+  
+  resp <- data[response]
+  data <- select(data, -all_of(response))
+  
+  rowNum <- nrow(data)
+  colNum <- ncol(data)
+  items = rowNum * colNum
+  itemsToDel = as.integer((1 - percentLeft) * items)
+  
+  dim_data <- dim(data)
+  
+  all_possible <- expand.grid(1:dim_data[1], 1:dim_data[2])
+  
+  sample_NA <- sample(1:dim(all_possible)[1], itemsToDel)
+  
+  for (samp in sample_NA) {
+    delrowNum <- all_possible[samp, ][[1]]
+    delcolNum <- all_possible[samp, ][[2]]
+    data[[delrowNum, delcolNum]] <- NA
+  }
+  
+  return(cbind(data, resp))
+}
+
+steelplate_NA <- deleteData(steelPlates, "Class", 0.95)
+```
+
+```{r warning=FALSE}
+missForest(steelplate_NA)
+
+```
+
+
+
+
+
+
+
+
+
+
