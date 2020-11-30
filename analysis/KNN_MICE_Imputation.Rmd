@@ -16,18 +16,16 @@ library(mice)
 library(VIM)
 library(randomForest)
 library(gbm)
-library(FNN)
 library(dplyr)
 library(modeest)
 library(e1071)
+library(missForest)
+library(fastDummies)
 ```
 
 
 ```{r}
-deleteData <- function(data, response, percentLeft) {
-  
-  resp <- data[response]
-  data <- select(data, -all_of(response))
+deleteData <- function(data, percentLeft) {
   
   rowNum <- nrow(data)
   colNum <- ncol(data)
@@ -46,9 +44,23 @@ deleteData <- function(data, response, percentLeft) {
     data[[delrowNum, delcolNum]] <- NA
   }
   
-return(cbind(data, resp))
+return(data)
 }
 ```
+
+
+```{r}
+data(Wage)
+Wage_new <- select(Wage, -c(wage, region))
+wage_NA <- deleteData(Wage_new, 0.95)
+
+wage_miss <- missForest(wage_NA)
+
+wage_new <- wage_miss$ximp
+wage_miss$OOBerror
+```
+
+
 
 ```{r}
 
@@ -79,8 +91,8 @@ change_Wage <- function(data_set){
 
 ```{r, warning = FALSE}
 
-KNN_Impute_Testing <- function(data, form_train, response, type, sim_number = 1000,
-                               training_split = 0.8, K = 5, percentLeft = 0.95, 
+KNN_MF_Impute_Testing <- function(method, data, form_train, response, type, sim_number = 1000,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
                                transformation = FALSE, transformation_function = NULL, 
                                class_hyper = NULL, reg_hyper = NULL){
   
@@ -95,13 +107,17 @@ KNN_Impute_Testing <- function(data, form_train, response, type, sim_number = 10
 # sim_number - number of simulations 
 # training_split - percentage of data used for testing 
 # K - K for KNN procedure
+# mf_tree - number of trees for missForest
 # percentLeft - 1 - percentLeft will be the amount of datapoints removed
 # transformation - if TRUE, will perform a transformation on dataset after imputation
 # transformation_function - if transformation is TRUE, function that transforms complete data 
 # clas_hyper - list of classification hyperparameters if classification task 
 # reg_hyper - list of regression hyperparameters if regression task 
   # (Must be of form list(mtry = ?, rf_trees = ?, depth_gbm = ?, gbm_trees = ?))
-
+  
+  
+  
+  
 # Get dimensions of data 
 n <- dim(data)[1]
 p <- dim(data)[2]
@@ -136,15 +152,24 @@ for (s in 1:sim_number){
   test_set <- data[-training_rows, ]
   
   # Put random NA values in training set 
-  NA_dataset <- deleteData(training_set, response, percentLeft)
+  NA_dataset <- deleteData(training_set, percentLeft)
   
   
   # Impute using KNN
-  knn_impute_set <- kNN(NA_dataset, k = K)[, 1:p]
+  
+  if (method == "KNN"){
+    impute_set <- kNN(NA_dataset, k = K)[, 1:p]
+  }
+  
+  if (method == "MissForest"){
+    
+    impute_set <- missForest(NA_dataset, ntree = mf_tree)$ximp
+  }
+  
   
   # Transform Dataset 
   if (transformation == TRUE){
-    knn_impute_set <- transformation_function(knn_impute_set)
+    impute_set <- transformation_function(impute_set)
     test_set <- transformation_function(test_set)
   }
 
@@ -156,7 +181,7 @@ for (s in 1:sim_number){
     # Least Squares
     
     # Perform OLS Regression, get predictions, and MSE
-    least_squares <- lm(form_train, data = knn_impute_set)
+    least_squares <- lm(form_train, data = impute_set)
     
     ls_predict <- predict(least_squares, test_set)
     
@@ -165,7 +190,7 @@ for (s in 1:sim_number){
     # Random Forest 
      
     # Perform Random Forest, get predictions, and MSE
-    rf_knn <- randomForest(form_train, data = knn_impute_set, 
+    rf_knn <- randomForest(form_train, data = impute_set, 
                  ntree = reg_hyper$rf_trees, mtry = reg_hyper$mtry)
     
     rf_predict <- predict(rf_knn, newdata = test_set)
@@ -175,7 +200,7 @@ for (s in 1:sim_number){
     # Gradient Boosting 
     
     # Perform gradient boosting, get predictions, and MSE
-    gbm_knn <- gbm(form_train, distribution = "gaussian", data = knn_impute_set, 
+    gbm_knn <- gbm(form_train, distribution = "gaussian", data = impute_set, 
                    n.trees = reg_hyper$gbm_trees, interaction.depth = reg_hyper$depth_gbm, 
                    shrinkage = 0.01)
     
@@ -194,7 +219,7 @@ for (s in 1:sim_number){
     # Classification Models go here 
     
     # Logistic Regression 
-    logistic_regression <- glm(form_train, data = knn_impute_set, 
+    logistic_regression <- glm(form_train, data = impute_set, 
                                  family = "binomial")
       
     lr_predict <- ifelse(predict(logistic_regression, test_set) >= 0.5, yes = 1, 
@@ -203,7 +228,7 @@ for (s in 1:sim_number){
     lr_class_error <- sum(lr_predict == test_set_y)/length(lr_predict)
     
     # Random Forest 
-    rf_class_knn <- randomForest(form_train, data = knn_impute_set, 
+    rf_class_knn <- randomForest(form_train, data = impute_set, 
                    ntree = class_hyper$rf_trees, mtry = class_hyper$mtry)
       
     rf_class_predict <- predict(rf_class_knn, newdata = test_set)
@@ -212,14 +237,14 @@ for (s in 1:sim_number){
     
     # SVM 
     if (class_hyper$kernel == "linear"){
-       svm_knn <- svm(form_train, data= knn_impute_set, kernel = "linear", 
+       svm_knn <- svm(form_train, data= impute_set, kernel = "linear", 
                        cost = class_hyper$cost )
       
     }
     
     if (class_hyper$kernel == "polynomial"){
       
-      svm_knn <- svm(form_train, data= knn_impute_set, kernel = "polynomial", 
+      svm_knn <- svm(form_train, data= impute_set, kernel = "polynomial", 
                        cost = class_hyper$cost, degree = class_hyper$degree, 
                       gamma = class_hyper$gamma, coef0 = class_hyper$coef0)
       
@@ -227,7 +252,7 @@ for (s in 1:sim_number){
     
     if (class_hyper$kernel == "radial"){
       
-      svm_knn <- svm(form_train, data= knn_impute_set, kernel = "radial", 
+      svm_knn <- svm(form_train, data= impute_set, kernel = "radial", 
                        cost = class_hyper$cost, gamma = class_hyper$gamma)
     }
     
@@ -238,10 +263,10 @@ for (s in 1:sim_number){
     # Gradient Boosting 
     
     # Change the numeric type 
-    knn_impute_set[[response]] <- as.numeric(knn_impute_set[[response]]) - 1
+    impute_set[[response]] <- as.numeric(impute_set[[response]]) - 1
     
     # Train GBM
-    gbm_class_mice <- gbm(form_train, distribution = "bernoulli", data = knn_impute_set, 
+    gbm_class_mice <- gbm(form_train, distribution = "bernoulli", data = impute_set, 
                      n.trees = class_hyper$gbm_trees, interaction.depth = class_hyper$depth_gbm, 
                      shrinkage = 0.01)
     
@@ -330,7 +355,7 @@ for (s in 1:sim_number){
   test_set <- data[-training_rows, ]
   
   # Get NA dataset 
-  NA_dataset <- deleteData(training_set, response, percentLeft)
+  NA_dataset <- deleteData(training_set, percentLeft)
   
   # Immpute using MICE
   mice_object <- mice(NA_dataset, m = num_impute, maxit = maxiter, 
@@ -570,9 +595,9 @@ type <- "regression"
 
 reg_hyper_1 <- list(mtry = 4, rf_trees = 500, depth_gbm = 6, gbm_trees = 467)
 
-test_knn_1 <- KNN_Impute_Testing(data = Wage, form_train = logwage ~.,
-                                 response = "logwage", type = "regression", sim_number = 1000,
-                               training_split = 0.8, K = 5, percentLeft = 0.95, 
+test_knn_1 <- KNN_MF_Impute_Testing(method = "MissForest", data = wage_new, form_train = logwage ~.,
+                                 response = "logwage", type = "regression", sim_number = 5,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
                                transformation = TRUE, transformation_function = change_Wage, 
                                reg_hyper = reg_hyper_1)
 
@@ -585,9 +610,6 @@ test_MICE_1 <- MICE_Impute_Testing(data = Wage, form_train =logwage ~.,
                                transformation = FALSE, transformation_function = NULL, 
                                reg_hyper = reg_hyper_1)
 
-
-
-test_MICE_1
 ```
 
 
@@ -609,7 +631,7 @@ class_hyper_1 <- list(mtry = 2, rf_trees = 400, depth_gbm = 2, gbm_trees = 500,
             kernel = "radial", gamma = 1, cost = 20)
 
 test_MICE_2 <- MICE_Impute_Testing(data = diabetes_2, form_train =class ~.,
-                                response = "class", type = "classification", sim_number = 10,
+                                response = "class", type = "classification", sim_number = 5,
                                training_split = 0.8, num_impute = 5, maxiter = 5, percentLeft = 0.95, 
                                transformation = FALSE, transformation_function = NULL, 
                                class_hyper = class_hyper_1)

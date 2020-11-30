@@ -10,6 +10,15 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
+```{r}
+library(glmnet)
+library(randomForest)
+library(gbm)
+library(e1071)
+library(dplyr)
+```
+
+
 ```{r warning=FALSE}
 setwd('./..')
 diabetes = read.csv(paste0(getwd(), "/data/diabetes.csv"), header = TRUE)
@@ -28,7 +37,98 @@ lasso_fit <- glmnet(x, y,
                     family = "binomial", lambda = lambda_min)
 
 lasso_fit$beta
-lambda_min
-plot(lasso_diabetes)
-sum(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
 ```
+
+
+```{r}
+diabetes_final <- select(diabetes, -c(skin))
+diabetes_final$class <- as.factor(diabetes$class)
+```
+
+
+
+```{r}
+
+set.seed(15)
+m_try_vec <- seq(1, 7)
+
+
+for (m_try in m_try_vec){
+  
+  rf <- randomForest(class ~., data = diabetes_final, ntree = 1000, mtry = m_try)
+  
+  rf_err <- rf$err.rate
+  
+  rf_oob <- rf_err[, "OOB"]
+  
+  min_pos_rf <- which.min(rf_oob)
+  
+  print(c(m_try, min_pos_rf, rf_oob[min_pos_rf]))
+  
+  
+}
+
+
+# 3 212 0.2135417
+```
+
+
+```{r}
+
+gbm_diabetes <- data.frame(diabetes_final)
+gbm_diabetes$class <- as.numeric(gbm_diabetes$class) - 1
+depth_vec <- seq(1, 8)
+
+
+for (depth in depth_vec){
+  
+  gbm_try <- gbm(class ~., distribution = "bernoulli", data = gbm_diabetes, 
+                 n.trees = 10000, interaction.depth = depth, cv.folds = 5, shrinkage = 0.01)
+  
+  
+  cv_error <- gbm_try$cv.error
+  
+  tree_number_gbm <- which.min(cv_error)
+  
+  print(c(depth, tree_number_gbm, cv_error[tree_number_gbm]))
+  
+}
+
+
+# 2 604 0.9380454
+```
+
+```{r}
+
+# Linear works the best! 
+svm_linear <- tune(svm, class ~., data = diabetes_final, kernel = "linear", 
+     ranges = list(cost = c(1, 10, 25, 50, 100, 250, 300, 500)))
+
+summary(svm_linear)
+
+# 10 0.2292379
+```
+
+```{r}
+
+
+svm_polynomial <- tune(svm, class ~., data = diabetes_final, kernel = "polynomial", 
+     ranges = list(cost = c(1, 10, 12), 
+                   degree= c(2, 3, 4)))
+
+summary(svm_polynomial)
+
+
+
+```
+
+
+
+```{r}
+svm_radial <- tune(svm, class ~., data = diabetes_final, kernel = "radial", 
+     ranges = list(cost = c(1, 5, 10, 15), 
+                   gamma = c(0.05, 0.20, 0.35, 0.5, 0.75, 1)))
+
+summary(svm_radial)
+```
+
