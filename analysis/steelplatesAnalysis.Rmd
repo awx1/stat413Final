@@ -131,19 +131,19 @@ table(ifelse(predict(steelLogRegLasso) > 0, 1, 0), new_dummy_steelplates$Class)
 ```{r warning=FALSE}
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "linear", cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
-table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+table(ifelse(as.vector(svm.pred) > 0, 1, 0), new_dummy_steelplates$Class)
 tunedLinear <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'linear')
 tunedLinear
 
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "polynomial", gamma=1, cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
-table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+table(ifelse(as.vector(svm.pred) > 0, 1, 0), new_dummy_steelplates$Class)
 tunedPoly <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'polynomial')
 tunedPoly
 
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "radial", gamma=1, cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
-table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+table(ifelse(as.vector(svm.pred) > 0, 1, 0), new_dummy_steelplates$Class)
 tunedRadial <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'radial')
 tunedRadial
 ```
@@ -158,7 +158,7 @@ hyper_grid <- expand.grid(
   n.minobsinnode = c(5, 10, 15),
   bag.fraction = c(.65, .8, 1),
   optimal_trees = 0,               # a place to dump results
-  min_RMSE = 0                     # a place to dump results
+  min_crossEntropy = 0                     # a place to dump results
 )
 
 # Perform gradient boosting, get predictions, and MSE
@@ -184,11 +184,11 @@ for(i in 1:nrow(hyper_grid)) {
       n.minobsinnode = hyper_grid$n.minobsinnode[i],
       bag.fraction = hyper_grid$bag.fraction[i])
   hyper_grid$optimal_trees[i] <- which.min(gbm$train.error)
-  hyper_grid$min_RMSE[i] <- sqrt(min(gbm$valid.error))
+  hyper_grid$min_crossEntropy[i] <- min(gbm$valid.error)
 }
 
 hyper_grid %>%
-  dplyr::arrange(min_RMSE) %>%
+  dplyr::arrange(min_crossEntropy) %>%
   head(10)
 
 gbm_predict <- predict(gbm, newdata = new_dummy_steelplates)
@@ -199,13 +199,18 @@ table(ifelse(gbm_predict > 0, 1, 0), new_dummy_steelplates$Class)
 ```{r}
 tracker <- list(0,0,0,0,0)
 for (i in 1:50) {
-  knn.predict <- knn(train = new_dummy_steelplates, test = new_dummy_steelplates, cl = new_dummy_steelplates$Class, k=16)
-  output <- table(knn.predict, new_dummy_steelplates$Class)
+  samp <- sample(1:nrow(new_dummy_steelplates), size = 0.8 * nrow(new_dummy_steelplates))
+  trueVal <- new_dummy_steelplates$Class
+  knn.predict <- knn(train = select(new_dummy_steelplates[samp,], -c(Class)), test = select(new_dummy_steelplates[-samp,], -c(Class)), cl = trueVal[samp], k=i)
+  output <- table(knn.predict, trueVal[-samp])
+  print(output)
   precision <- output[4]/(output[4] + output[2])
   recall <- output[4]/(output[4] + output[3])
   f1 <- 2 * (precision * recall) / (recall + precision)
+  print(f1)
   accuracy <- (output[4] + output[1])/length(knn.predict)
-  if (tracker[1] == 0 || tracker[2] < f1) {
+  print(accuracy)
+  if (tracker[1] == 0 | tracker[2] < f1) {
     tracker[1] <- i
     tracker[2] <- f1
     tracker[3] <- precision
@@ -214,6 +219,7 @@ for (i in 1:50) {
     bestKNN <- knn.predict
   } 
 }
+tracker
 ```
 
 
