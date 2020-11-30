@@ -25,49 +25,61 @@ library(class)
 
 
 ```{r warning=FALSE}
+### Data Processing and Cleaning
 setwd('./..')
 steelPlates = read.csv(paste0(getwd(), "/data/steel-plates.csv"), header = TRUE)
 steelPlates$Class <- steelPlates$Class - 1
-steelPlates = select(steelPlates, -c(V28, V29, V30, V31, V32, V33))
+steelPlates = select(steelPlates, -c(V13, V28, V29, V30, V31, V32, V33))
 ```
 
 
 ```{r warning=FALSE}
-table(steelPlates$Class)
-
 # Fit LASSO for feature selection
 
 x <- as.matrix(select(steelPlates, -c(Class)))
 y <- as.matrix(select(steelPlates, c(Class))) 
 
-lasso_steelplates <- cv.glmnet(x, y, family = "binomial", )
-
-lambda_min <- lasso_steelplates$lambda.min
-
-lasso_fit <- glmnet(x, y,
-                    family = "binomial", lambda = lambda_min)
-
-lasso_fit$beta
-lambda_min
-plot(lasso_steelplates)
-sum(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
-table(ifelse(predict(lasso_fit, newx = x, type = "link") >= 0, 1, 0), y)
+error <- list(0, 0, 0)
+for (idx in c(1:50)) {
+  print(idx)
+  lasso_steelplates <- cv.glmnet(x, y, family = "binomial")
+  lambda_min <- lasso_steelplates$lambda.min
+  lasso_fit <- glmnet(x, y, family = "binomial", lambda = lambda_min)
+  if (error[1] == 0 || error[1] > min(lasso_steelplates$cvm)) {
+    error[1] <- min(lasso_steelplates $cvm)
+    error[2] <- lasso_fit$beta
+    error[3] <- lambda_min
+    lasso_steelplates_real <- lasso_steelplates
+    lasso_fit_real <- lasso_fit
+  }
+}
+plot(lasso_steelplates_real)
+sum(ifelse(predict(lasso_fit_real, newx = x, type = "link") >= 0, 1, 0) == y)/length(y)
+table(ifelse(predict(lasso_fit_real, newx = x, type = "link") >= 0, 1, 0), y)
 ```
 
 
 ```{r}
-new_dummy_steelplates <- select(steelPlates, -c(V4, V8, V22))
+### Removing predictors from lasso
+new_dummy_steelplates <- select(steelPlates, -c(V2, V4, V5, V6, V7, V10, V21, V22, V27))
 new_dummy_steelplates$Class <- as.factor(new_dummy_steelplates$Class)
 
-# Cross validation for random forest 
-mtry_vec <- c(2, 3, 4, 5, 6, 8, 10, 12)
+### Cleaning 
+new_dummy_steelplates$V12 <- as.factor(new_dummy_steelplates$V12)
+```
+
+
+```{r}
+# Cross validation for random forest using grid search
+for (idx in 1:10) {
+mtry_vec <- c(2, 3, 4, 5, 6, 8, 10, 12, 14)
 
 rf_steelplates_cv <- matrix(rep(0, length(mtry_vec) * 5), ncol = 5)
 
 count <- 1
 for(mt in mtry_vec){
   
-  rf <- randomForest(Class ~., data = new_dummy_steelplates, mtry = mt, ntree = 600)
+  rf <- randomForest(Class ~., data = new_dummy_steelplates, mtry = mt, ntree = 1500)
 
   some <- rf$err.rate
 
@@ -79,10 +91,26 @@ for(mt in mtry_vec){
 }
 
 pos_of_min_rf <- which.min(rf_steelplates_cv[, 3])
-
-rf_steelplates_cv[pos_of_min_rf, ]
+print(idx)
+print(rf_steelplates_cv[pos_of_min_rf, ])
+}
 ## Output
-## 12.00000000 231.00000000   0.16383308   0.07492114   0.33135215
+## 12.0000000 251.0000000   0.1628027   0.0796530   0.3194651
+## 14.00000000 217.00000000   0.16125708   0.08044164   0.31352155
+## 14.00000000 127.00000000   0.16280268   0.08753943   0.30460624
+## 8.000000e+00 1.294000e+03 1.628027e-01 7.334385e-02 3.313522e-01
+## 1.400000e+01 1.296000e+03 1.643483e-01 8.201893e-02 3.194651e-01
+## 10.0000000 450.0000000   0.1633179   0.0796530   0.3209510
+## 8.0000000 399.0000000   0.1607419   0.0796530   0.3135215
+## 10.00000000 618.00000000   0.16331788   0.07649842   0.32689450
+## 8.00000000 250.00000000   0.16074189   0.07570978   0.32095097
+## 8.00000000 498.00000000   0.16177228   0.07649842   0.32243685
+## 12.00000000 342.00000000   0.16125708   0.07728707   0.31946508
+## 10.00000000 333.00000000   0.16177228   0.07728707   0.32095097
+## 1.200000e+01 1.145000e+03 1.607419e-01 7.413249e-02 3.239227e-01
+## ## 12.00000000 196.00000000   0.16022669   0.07728707   0.31649331
+## 14.00000000 88.00000000  0.16228748  0.08201893  0.31352155
+## 14.00000000 458.00000000   0.16125708   0.07255521   0.32838039
 ```
 
 
@@ -100,38 +128,92 @@ table(ifelse(predict(steelLogRegLasso) > 0, 1, 0), new_dummy_steelplates$Class)
 ```
 
 
-```{r}
+```{r warning=FALSE}
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "linear", cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
 table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+tunedLinear <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'linear')
+tunedLinear
 
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "polynomial", gamma=1, cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
 table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+tunedPoly <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'polynomial')
+tunedPoly
 
 steelSVM <- svm(Class ~ ., data = new_dummy_steelplates, kernel = "radial", gamma=1, cost = 0.1)
 svm.pred <- predict(steelSVM, new_dummy_steelplates)
 table(ifelse(svm.pred > 0, 1, 0), new_dummy_steelplates$Class)
+tunedRadial <- tune.svm(Class ~ ., data = new_dummy_steelplates, gamma = 1, cost = c(0.01, 0.1, 1, 10, 100, 1000), tunecontrol = tune.control(cross = 10), kernel = 'radial')
+tunedRadial
 ```
 
 
 ```{r}
+
+# create hyperparameter grid
+hyper_grid <- expand.grid(
+  shrinkage = c(.01, .1, .3),
+  interaction.depth = c(1, 3, 5),
+  n.minobsinnode = c(5, 10, 15),
+  bag.fraction = c(.65, .8, 1),
+  optimal_trees = 0,               # a place to dump results
+  min_RMSE = 0                     # a place to dump results
+)
+
 # Perform gradient boosting, get predictions, and MSE
-gbm <- gbm(formula = Class ~ .,
-  distribution = "bernoulli",
-  data = new_dummy_steelplates,
-  n.trees = 10000,
-  interaction.depth = 1,
-  shrinkage = 0.01)
-    
+
+# gbm <- gbm(formula = as.character(Class) ~ .,
+#   distribution = "bernoulli",
+#   data = new_dummy_steelplates,
+#   n.trees = 10000,
+#   interaction.depth = 1,
+#   bag.fraction = 1,
+#   train.fraction = 0.8,
+#   shrinkage = 0.01)
+
+for(i in 1:nrow(hyper_grid)) {
+  print(i)
+  gbm <- gbm(formula = as.character(Class) ~ .,
+      distribution = "bernoulli",
+      data = new_dummy_steelplates,
+      n.trees = 10000,
+      train.fraction = 0.8,
+      interaction.depth = hyper_grid$interaction.depth[i],
+      shrinkage = hyper_grid$shrinkage[i],
+      n.minobsinnode = hyper_grid$n.minobsinnode[i],
+      bag.fraction = hyper_grid$bag.fraction[i])
+  hyper_grid$optimal_trees[i] <- which.min(gbm$train.error)
+  hyper_grid$min_RMSE[i] <- sqrt(min(gbm$valid.error))
+}
+
+hyper_grid %>%
+  dplyr::arrange(min_RMSE) %>%
+  head(10)
+
 gbm_predict <- predict(gbm, newdata = new_dummy_steelplates)
 table(ifelse(gbm_predict > 0, 1, 0), new_dummy_steelplates$Class)
 ```
 
 
 ```{r}
-knn.predict <- knn(train = new_dummy_steelplates, test = new_dummy_steelplates, cl = new_dummy_steelplates$Class, k=16)
-table(knn.predict, new_dummy_steelplates$Class)
+tracker <- list(0,0,0,0,0)
+for (i in 1:50) {
+  knn.predict <- knn(train = new_dummy_steelplates, test = new_dummy_steelplates, cl = new_dummy_steelplates$Class, k=16)
+  output <- table(knn.predict, new_dummy_steelplates$Class)
+  precision <- output[4]/(output[4] + output[2])
+  recall <- output[4]/(output[4] + output[3])
+  f1 <- 2 * (precision * recall) / (recall + precision)
+  accuracy <- (output[4] + output[1])/length(knn.predict)
+  if (tracker[1] == 0 || tracker[2] < f1) {
+    tracker[1] <- i
+    tracker[2] <- f1
+    tracker[3] <- precision
+    tracker[4] <- recall
+    tracker[5] <- accuracy
+    bestKNN <- knn.predict
+  } 
+}
 ```
 
 
@@ -160,7 +242,7 @@ deleteData <- function(data, response, percentLeft) {
   
   return(cbind(data, resp))
 }
-
+steelPlates$V12 <- as.factor(steelPlates$V12)
 steelplate_NA <- deleteData(steelPlates, "Class", 0.95)
 ```
 
