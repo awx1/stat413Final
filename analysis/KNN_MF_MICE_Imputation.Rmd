@@ -77,7 +77,7 @@ change_Wage <- function(data_set){
 
 
 ```{r, warning = FALSE}
-KNN_MF_Impute_Testing <- function(method, data, form_train, response, type, sim_number = 250,
+KNN_MF_Simple_Impute_Testing <- function(method, data, form_train, response, type, sim_number = 250,
                                training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
                                transformation = FALSE, transformation_function = NULL, 
                                class_hyper = NULL, reg_hyper = NULL){
@@ -86,7 +86,7 @@ KNN_MF_Impute_Testing <- function(method, data, form_train, response, type, sim_
 # Testing KNN or MF Imputation by randomly removing some data points, imputing using a 
 # knn-like procedure, and evaluating on a testing dataset 
   
-# method, KNN or MissForest
+# method, KNN, MissForest, or Simple (Mean and Mode) Imputing 
 # data - full complete dataset
 # form_train - formula for training
 # response - column name of response variable
@@ -131,7 +131,6 @@ if (type == "classification"){
 
 for (s in 1:sim_number){
   
-  
   print(s)
   # Split training and testing
   training_rows <- sample(1:n, as.integer(n * training_split))
@@ -151,6 +150,37 @@ for (s in 1:sim_number){
   if (method == "MissForest"){
     
     impute_set <- missForest(NA_dataset, ntree = mf_tree, verbose = FALSE)$ximp
+  }
+  
+  if (method == "Simple"){
+    
+    impute_set <- as.data.frame(NA_dataset)
+    
+    for (p_col in 1:p){
+      column <- NA_dataset[, p_col]
+      
+      NA_pos <- which(is.na(column) == TRUE)
+      
+      no_NA_col <- column[-NA_pos]
+      
+      if (is.factor(no_NA_col) == TRUE){
+        
+        mode <- mlv(no_NA_col, method = "mfv")
+        column[NA_pos] <- mode
+        impute_set[, p_col] <- column
+        
+      }
+      
+      else{
+        
+        mean_col <- mean(no_NA_col)
+        column[NA_pos] <- mean_col
+        impute_set[, p_col] <- column
+      }
+      
+      
+    }
+    
   }
   
   
@@ -318,9 +348,6 @@ MICE_Impute_Testing <- function(data, form_train, response, type, sim_number = 2
 # class_hyper - list of classification hyperparameters if classification task 
 # reg_hyper - list of regression hyperparameters if regression task 
 # (Must be of form list(mtry = ?, rf_trees = ?, depth_gbm = ?, gbm_trees = ?)) 
-
-
-
 
 n <- dim(data)[1]
 p <- dim(data)[2]
@@ -571,7 +598,7 @@ for (s in 1:sim_number){
     impute_knn <- select(impute_list[[m_5]], -c(response))
     knn_test <- select(test_set, -c(response))
     
-    class_training <- impute_set[response]
+    class_training <- impute_list[[m_5]][response]
     
     knn_mice <- knn(impute_knn, knn_test, class_training[, 1], k = class_hyper$k_neighbor)
     
@@ -670,13 +697,29 @@ test_MICE_2
 
 ```{r}
 
-KNN_test_2 <-  KNN_MF_Impute_Testing(method = "MissForest", data = diabetes_final, form_train = class ~., response = "class", type = "Classification", sim_number = 10,
+KNN_test_1 <-  KNN_MF_Simple_Impute_Testing(method = "Simple", data = diabetes_final, form_train = class ~., response = "class", type = "Classification", sim_number = 10,
                                training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
                                transformation = FALSE, transformation_function = NULL, 
                                class_hyper = class_hyper_1, reg_hyper = NULL)
   
 
-KNN_test_2
-  
+KNN_test_2 <-  KNN_MF_Simple_Impute_Testing(method = "KNN", data = diabetes_final, form_train = class ~., response = "class", type = "Classification", sim_number = 10,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1, reg_hyper = NULL)
+
+
+KNN_test_3 <-  KNN_MF_Simple_Impute_Testing(method = "MissForest", data = diabetes_final, form_train = class ~., response = "class", type = "Classification", sim_number = 10,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1, reg_hyper = NULL)
+
+
+test_MICE_3 <- MICE_Impute_Testing(data = diabetes_final, form_train =class ~.,
+                                response = "class", type = "classification", sim_number = 10,
+                               training_split = 0.8, num_impute = 5, maxiter = 10, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
 ```
 
