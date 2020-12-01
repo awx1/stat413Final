@@ -132,3 +132,25 @@ svm_radial <- tune(svm, class ~., data = diabetes_final, kernel = "radial",
 summary(svm_radial)
 ```
 
+```{r}
+set.seed(2)
+diabetes_X <- select(diabetes_final, -c(class))
+diabetes_y <- diabetes_final["class"][, 1]
+k_vec <- seq(1, 20)
+
+knn_mat <- matrix(nrow = 20, ncol = 2)
+
+for (K in k_vec){
+  
+  knn_cv <- knn.cv(diabetes_X, diabetes_y, k = 2)
+  
+  error <- sum(diabetes_y == knn_cv)/length(knn_cv)
+  
+  knn_mat[K, ] <- c(K, error)
+}
+
+knn_mat
+
+# Reasonable value - 4
+```
+
