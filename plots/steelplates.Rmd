@@ -107,8 +107,10 @@ sp90 <- ggplot(error90, aes(avgErr, stdErr)) +
 sp <- ggarrange(sp99, sp95, sp90, ncol = 3,
                 nrow = 1, common.legend = TRUE, legend = "bottom")
 
-annotate_figure(sp,
+new_sp <- annotate_figure(sp,
                 top = text_grob("Steel Plates", face = "bold"),
                 left = "Standard Dev Error",
                 bottom = "Avg. Error")
+
+ggsave("steelplates-avgSD.png", new_sp)
 ```
