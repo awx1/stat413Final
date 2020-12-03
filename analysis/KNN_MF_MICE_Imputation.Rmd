@@ -21,6 +21,10 @@ library(modeest)
 library(e1071)
 library(missForest)
 library(fastDummies)
+
+library(class)
+library(ISLR)
+library(glmnet)
 ```
 
 
@@ -205,7 +209,7 @@ for (s in 1:sim_number){
     ls_mse <- mean((ls_predict - test_set_y)^2)
     
     # Random Forest 
-     
+
     # Perform Random Forest, get predictions, and MSE
     rf_knn <- randomForest(form_train, data = impute_set, 
                  ntree = reg_hyper$rf_trees, mtry = reg_hyper$mtry)
@@ -243,7 +247,7 @@ for (s in 1:sim_number){
                            no =0)
     
     lr_class_error <- sum(lr_predict == test_set_y)/length(lr_predict)
-    
+
     # Random Forest 
     rf_class_knn <- randomForest(form_train, data = impute_set, 
                    ntree = class_hyper$rf_trees, mtry = class_hyper$mtry)
@@ -385,7 +389,7 @@ for (s in 1:sim_number){
   
   # Immpute using MICE
   mice_object <- mice(NA_dataset, m = num_impute, maxit = maxiter, 
-                      printFlag = FALSE)
+                      printFlag = FALSE, method = "cart")
   
   # Will contain all imputed datasets 
   impute_list <- list()
@@ -721,5 +725,129 @@ test_MICE_3 <- MICE_Impute_Testing(data = diabetes_final, form_train =class ~.,
                                transformation = FALSE, transformation_function = NULL, 
                                class_hyper = class_hyper_1)
 
+```
+
+```{r warning=FALSE}
+### Data Processing and Cleaning
+setwd('./..')
+steelPlates = read.csv(paste0(getwd(), "/data/steel-plates.csv"), header = TRUE)
+steelPlates$Class <- steelPlates$Class - 1
+steelPlates = select(steelPlates, -c(V13, V28, V29, V30, V31, V32, V33))
+
+### Removing predictors from lasso
+new_dummy_steelplates <- select(steelPlates, -c(V2, V4, V5, V6, V7, V10, V21, V22, V27))
+new_dummy_steelplates$Class <- as.factor(new_dummy_steelplates$Class)
+
+### Cleaning 
+#new_dummy_steelplates$V12 <- as.factor(new_dummy_steelplates$V12)
+
+sim_number <- 100
+training_split <- 0.8
+num_impute = 5
+maxiter = 5
+form_train <- Class ~. 
+response <- "class"
+percentLeft <- 0.95
+transformation <- FALSE
+type <- "classification"
+
+class_hyper_1 <- list(mtry = 12, rf_trees = 196, depth_gbm = 2, gbm_trees = 4912, 
+            kernel = "linear", gamma = 1, cost = 1, k_neighbor = 12)
+```
+
+```{r}
+test_simple_1 <- KNN_MF_Simple_Impute_Testing(method = "Simple", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.99, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_simple_2 <- KNN_MF_Simple_Impute_Testing(method = "Simple", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_simple_3 <- KNN_MF_Simple_Impute_Testing(method = "Simple", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.90, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+write.csv(1 - test_simple_1, "SteelPlate_Simple_99")
+write.csv(1 - test_simple_2, "SteelPlate_Simple_95")
+write.csv(1 - test_simple_3, "SteelPlate_Simple_90")
+```
+
+```{r}
+test_mf_1 <- KNN_MF_Simple_Impute_Testing(method = "MissForest", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.99, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_mf_2 <- KNN_MF_Simple_Impute_Testing(method = "MissForest", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_mf_3 <- KNN_MF_Simple_Impute_Testing(method = "MissForest", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 5, mf_tree = 100, percentLeft = 0.90, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+write.csv(1 - test_mf_1, "SteelPlate_MF_99")
+write.csv(1 - test_mf_2, "SteelPlate_MF_95")
+write.csv(1 - test_mf_3, "SteelPlate_MF_90")
+```
+
+```{r}
+test_knn_1 <- KNN_MF_Simple_Impute_Testing(method = "KNN", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 12, mf_tree = 100, percentLeft = 0.99, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_knn_2 <- KNN_MF_Simple_Impute_Testing(method = "KNN", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 12, mf_tree = 100, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_knn_3 <- KNN_MF_Simple_Impute_Testing(method = "KNN", data = new_dummy_steelplates, form_train = Class ~.,
+                                 response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, K = 12, mf_tree = 100, percentLeft = 0.90, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+write.csv(1 - test_knn_1, "SteelPlate_KNN_99")
+write.csv(1 - test_knn_2, "SteelPlate_KNN_95")
+write.csv(1 - test_knn_3, "SteelPlate_KNN_90")
+```
+
+```{r}
+test_MICE_1 <- MICE_Impute_Testing(data = new_dummy_steelplates, form_train = Class ~.,
+                                response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, num_impute = 5, maxiter = 10, percentLeft = 0.99, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_MICE_2 <- MICE_Impute_Testing(data = new_dummy_steelplates, form_train = Class ~.,
+                                response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, num_impute = 5, maxiter = 10, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+test_MICE_3 <- MICE_Impute_Testing(data = new_dummy_steelplates, form_train = Class ~.,
+                                response = "Class", type = "classification", sim_number = 100,
+                               training_split = 0.8, num_impute = 5, maxiter = 10, percentLeft = 0.90, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_1)
+
+write.csv(1 - test_MICE_1, "SteelPlate_Mice_99")
+write.csv(1 - test_MICE_2, "SteelPlate_Mice_95")
+write.csv(1 - test_MICE_3, "SteelPlate_Mice_90")
 ```
 
