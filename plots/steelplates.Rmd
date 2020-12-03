@@ -1,0 +1,114 @@
+---
+title: "steelplates_plots"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(ggpubr)
+```
+
+
+```{r warning=FALSE}
+setwd('..')
+## Simple
+sp_simple_90 <- read.csv(paste0(getwd(), "/results/steelPlate_Simple_90"), header = TRUE)
+sp_simple_90 <- sp_simple_90[,-1]
+
+sp_simple_95 <- read.csv(paste0(getwd(), "/results/steelPlate_Simple_95"), header = TRUE)
+sp_simple_95 <- sp_simple_95[,-1]
+
+sp_simple_99 <- read.csv(paste0(getwd(), "/results/steelPlate_Simple_99"), header = TRUE)
+sp_simple_99 <- sp_simple_99[,-1]
+
+## MF
+sp_mf_90 <- read.csv(paste0(getwd(), "/results/steelPlate_MF_90"), header = TRUE)
+sp_mf_90 <- sp_mf_90[,-1]
+
+sp_mf_95 <- read.csv(paste0(getwd(), "/results/steelPlate_MF_95"), header = TRUE)
+sp_mf_95 <- sp_mf_95[,-1]
+
+sp_mf_99 <- read.csv(paste0(getwd(), "/results/steelPlate_MF_99"), header = TRUE)
+sp_mf_99 <- sp_mf_99[,-1]
+
+## KNN
+sp_knn_90 <- read.csv(paste0(getwd(), "/results/steelPlate_KNN_90"), header = TRUE)
+sp_knn_90 <- sp_knn_90[,-1]
+
+sp_knn_95 <- read.csv(paste0(getwd(), "/results/steelPlate_KNN_95"), header = TRUE)
+sp_knn_95 <- sp_knn_95[,-1]
+
+sp_knn_99 <- read.csv(paste0(getwd(), "/results/steelPlate_KNN_99"), header = TRUE)
+sp_knn_99 <- sp_knn_99[,-1]
+
+# MICE
+sp_mice_90 <- read.csv(paste0(getwd(), "/results/steelPlate_MICE_90"), header = TRUE)
+sp_mice_90 <- sp_mice_90[,-1]
+
+sp_mice_95 <- read.csv(paste0(getwd(), "/results/steelPlate_MICE_95"), header = TRUE)
+sp_mice_95 <- sp_mice_95[,-1]
+
+sp_mice_99 <- read.csv(paste0(getwd(), "/results/steelPlate_MICE_99"), header = TRUE)
+sp_mice_99 <- sp_mice_99[,-1]
+```
+
+
+```{r}
+simple <- list(sp_simple_90, sp_simple_95, sp_simple_99)
+mf <- list(sp_mf_90, sp_mf_95, sp_mf_99)
+knn <- list(sp_knn_90, sp_knn_95, sp_knn_99)
+mice <- list(sp_mice_90, sp_mice_95, sp_mice_99)
+all <- list(simple, mf, knn, mice)
+
+error <- data.frame(numeric(0), numeric(0), character(0), character(0), character(0), character(0))
+i <- 1
+type <- c("simple", "mf", "knn", "mice")
+for (item in all) {
+  idx <- 1
+  num <- c("90", "95", "99")
+  for (df in item) {
+    names <- c("log", "rf", "svm", "gbm", "knn")
+    vals <- list(df$Logistic.Regression.Accuracy, df$Random.Forest.Accuracy, df$SVM.Accuracy, 
+                 df$Gradient.Boosting.Accuracy, df$KNN.Accuracy)
+    valIdx <- 1
+    for (val in vals) {
+      error <- rbind(error, list(mean(val), sd(val), names[valIdx], num[idx], type[i], paste0(type[i], "-", num[idx])))
+      valIdx <- valIdx + 1
+    }
+    idx <- idx + 1
+  }
+  i <- i + 1
+}
+
+names(error) <- c("avgErr", "stdErr", "model", "percentLeft", "imputation", "label")
+```
+
+```{r}
+error99 <- subset(error, percentLeft == "99")
+sp99 <- ggplot(error99, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) +
+  labs(title = "1% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+error95 <- subset(error, percentLeft == "95")
+sp95 <- ggplot(error95, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "5% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+error90 <- subset(error, percentLeft == "90")
+sp90 <- ggplot(error90, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "10% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+
+sp <- ggarrange(sp99, sp95, sp90, ncol = 3,
+                nrow = 1, common.legend = TRUE, legend = "bottom")
+
+annotate_figure(sp,
+                top = text_grob("Steel Plates", face = "bold"),
+                left = "Standard Dev Error",
+                bottom = "Avg. Error")
+```
