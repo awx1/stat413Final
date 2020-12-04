@@ -1,0 +1,244 @@
+---
+title: "plotting results"
+author: "Michael Price"
+date: "12/3/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+```
+
+
+```{r}
+
+## Simple
+diabetes_simple_90 <- read.csv("Diabetes_Simple_90.csv", header = TRUE)
+diabetes_simple_90 <- diabetes_simple_90[,-1]
+diabetes_simple_95 <- read.csv("Diabetes_Simple_95.csv", header = TRUE)
+diabetes_simple_95 <- diabetes_simple_95[,-1]
+diabetes_simple_99 <- read.csv("Diabetes_Simple_99.csv", header = TRUE)
+diabetes_simple_99 <- diabetes_simple_99[,-1]
+
+## MF
+diabetes_mf_90 <- read.csv("Diabetes_MF_90.csv", header = TRUE)
+diabetes_mf_90 <- diabetes_mf_90[,-1]
+diabetes_mf_95 <- read.csv("Diabetes_MF_95.csv", header = TRUE)
+diabetes_mf_95 <- diabetes_mf_95[,-1]
+diabetes_mf_99 <- read.csv("Diabetes_MF_99.csv", header = TRUE)
+diabetes_mf_99 <- diabetes_mf_99[,-1]
+
+## KNN
+diabetes_KNN_90 <- read.csv("Diabetes_KNN_90.csv", header = TRUE)
+diabetes_KNN_90 <- diabetes_KNN_90[,-1]
+diabetes_KNN_95 <- read.csv("Diabetes_KNN_95.csv", header = TRUE)
+diabetes_KNN_95 <- diabetes_KNN_95[,-1]
+diabetes_KNN_99 <- read.csv("Diabetes_KNN_99.csv", header = TRUE)
+diabetes_KNN_99 <- diabetes_KNN_99[,-1]
+# MICE
+diabetes_MICE_90 <- read.csv("Diabetes_MICE_90.csv", header = TRUE)
+diabetes_MICE_90 <- diabetes_MICE_90[,-1]
+diabetes_MICE_95 <- read.csv("Diabetes_MICE_95.csv", header = TRUE)
+diabetes_MICE_95 <- diabetes_MICE_95[,-1]
+diabetes_MICE_99 <- read.csv("Diabetes_MICE_99.csv", header = TRUE)
+diabetes_MICE_99 <- diabetes_MICE_99[,-1]
+## Ensemble 
+
+diabetes_ens_90 <- read.csv("ens_Diabetes_90.csv", header = TRUE)
+diabetes_ens_90 <- diabetes_ens_90[,-1]
+diabetes_ens_95 <- read.csv("ens_Diabetes_95.csv", header = TRUE)
+diabetes_ens_95 <- diabetes_ens_95[,-1]
+diabetes_ens_99 <- read.csv("ens_Diabetes_99.csv", header = TRUE)
+diabetes_ens_99 <- diabetes_ens_99[,-1]
+```
+
+```{r}
+Simple <- list(1 - diabetes_simple_90, 1- diabetes_simple_95, 
+               1- diabetes_simple_99)
+MF <- list(1- diabetes_mf_90, 1- diabetes_mf_95, 1- diabetes_mf_99)
+KNN <- list(1- diabetes_KNN_90, 1- diabetes_KNN_95,1- diabetes_KNN_99)
+MICE <- list(1- diabetes_MICE_90,1-  diabetes_MICE_95,1- diabetes_MICE_99)
+Ensemble <- list(1-diabetes_ens_90,1- diabetes_ens_95,1- diabetes_ens_99)
+all <- list(Simple, MF, KNN, MICE, Ensemble)
+```
+
+
+```{r}
+
+# WIll Make Proper Dataframe of Errors for Classification
+error <- data.frame(numeric(0), numeric(0), character(0), character(0), character(0), character(0))
+i <- 1
+type <- c("Simple", "MF", "KNN", "MICE", "Ensemble")
+for (item in all) {
+  idx <- 1
+  num <- c("90", "95", "99")
+  for (df in item) {
+    names <- c("LR", "RF", "SVM", "GBM", "KNN")
+    vals <- list(df$Logistic.Regression.Accuracy, df$Random.Forest.Accuracy, df$SVM.Accuracy, 
+                 df$Gradient.Boosting.Accuracy, df$KNN.Accuracy)
+    valIdx <- 1
+    for (val in vals) {
+      error <- rbind(error, list(mean(val), sd(val), names[valIdx], num[idx], type[i], paste0(type[i], "-", num[idx])))
+      valIdx <- valIdx + 1
+    }
+    idx <- idx + 1
+  }
+  i <- i + 1
+}
+names(error) <- c("avgErr", "stdErr", "model", "percentLeft", "imputation", "label")
+```
+
+
+
+```{r}
+
+# Plots all scatterplots of distribution of errors
+error99 <- subset(error, percentLeft == "99")
+sp99 <- ggplot(error99, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) +
+  labs(title = "1% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank(), 
+        legend.title = element_blank())
+error95 <- subset(error, percentLeft == "95")
+sp95 <- ggplot(error95, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "5% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank(),
+        legend.title = element_blank())
+error90 <- subset(error, percentLeft == "90")
+sp90 <- ggplot(error90, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "10% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank(), 
+        legend.title = element_blank())
+sp <- ggarrange(sp99, sp95, sp90, ncol = 3,
+                nrow = 1, common.legend = TRUE, legend = "bottom")
+new_sp <- annotate_figure(sp,
+                top = text_grob("Diabetes Analysis", face = "bold"),
+                left = "Standard Dev Error",
+                bottom = "Avg. Error")
+
+new_sp
+
+
+ggsave("Diabetes-avgSD.png", new_sp)
+
+```
+
+
+
+```{r}
+## Simple
+Wage_simple_90 <- read.csv("Wage_Simple_90.csv", header = TRUE)
+Wage_simple_90 <- Wage_simple_90[,-1]
+Wage_simple_95 <- read.csv("Wage_Simple_95.csv", header = TRUE)
+Wage_simple_95 <- Wage_simple_95[,-1]
+Wage_simple_99 <- read.csv("Wage_Simple_99.csv", header = TRUE)
+Wage_simple_99 <- Wage_simple_99[,-1]
+
+## MF
+Wage_mf_90 <- read.csv("Wage_MF_90.csv", header = TRUE)
+Wage_mf_90 <- Wage_mf_90[,-1]
+Wage_mf_95 <- read.csv("Wage_MF_95.csv", header = TRUE)
+Wage_mf_95 <- Wage_mf_95[,-1]
+Wage_mf_99 <- read.csv("Wage_MF_99.csv", header = TRUE)
+Wage_mf_99 <- Wage_mf_99[,-1]
+
+## KNN
+Wage_KNN_90 <- read.csv("Wage_KNN_90.csv", header = TRUE)
+Wage_KNN_90 <- Wage_KNN_90[,-1]
+Wage_KNN_95 <- read.csv("Wage_KNN_95.csv", header = TRUE)
+Wage_KNN_95 <- Wage_KNN_95[,-1]
+Wage_KNN_99 <- read.csv("Wage_KNN_99.csv", header = TRUE)
+Wage_KNN_99 <- Wage_KNN_99[,-1]
+# MICE
+Wage_MICE_90 <- read.csv("Wage_MICE_90.csv", header = TRUE)
+Wage_MICE_90 <- Wage_MICE_90[,-1]
+Wage_MICE_95 <- read.csv("Wage_MICE_95.csv", header = TRUE)
+Wage_MICE_95 <- Wage_MICE_95[,-1]
+Wage_MICE_99 <- read.csv("Wage_MICE_99.csv", header = TRUE)
+Wage_MICE_99 <- Wage_MICE_99[,-1]
+## Ensemble 
+
+Wage_ens_90 <- read.csv("ens_Wage_90.csv", header = TRUE)
+Wage_ens_90 <- Wage_ens_90[,-1]
+Wage_ens_95 <- read.csv("ens_Wage_95.csv", header = TRUE)
+Wage_ens_95 <- Wage_ens_95[,-1]
+Wage_ens_99 <- read.csv("ens_Wage_99.csv", header = TRUE)
+Wage_ens_99 <- Wage_ens_99[,-1]
+```
+
+```{r}
+Simple <- list(Wage_simple_90,Wage_simple_95, 
+               Wage_simple_99)
+MF <- list( Wage_mf_90,Wage_mf_95, Wage_mf_99)
+KNN <- list( Wage_KNN_90, Wage_KNN_95, Wage_KNN_99)
+MICE <- list( Wage_MICE_90, Wage_MICE_95, Wage_MICE_99)
+Ensemble <- list(Wage_ens_90,Wage_ens_95, Wage_ens_99)
+all <- list(Simple, MF, KNN, MICE, Ensemble)
+
+```
+
+
+
+```{r}
+
+# WIll Make Proper Dataframe of Errors for Regression
+error <- data.frame(numeric(0), numeric(0), character(0), character(0), character(0), character(0))
+i <- 1
+type <- c("Simple", "MF", "KNN", "MICE", "Ensemble")
+for (item in all) {
+  idx <- 1
+  num <- c("90", "95", "99")
+  for (df in item) {
+    names <- c("OLS", "RF", "GBM")
+    vals <- list(df$OLS.MSE, df$Random.Forest.MSE,  
+                 df$Gradient.Boosting.MSE)
+    valIdx <- 1
+    for (val in vals) {
+      error <- rbind(error, list(mean(val), sd(val), names[valIdx], num[idx], type[i], paste0(type[i], "-", num[idx])))
+      valIdx <- valIdx + 1
+    }
+    idx <- idx + 1
+  }
+  i <- i + 1
+}
+names(error) <- c("avgErr", "stdErr", "model", "percentLeft", "imputation", "label")
+```
+
+
+
+```{r}
+
+# Make wage Plot 
+error99 <- subset(error, percentLeft == "99")
+sp99 <- ggplot(error99, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) +
+  labs(title = "1% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+error95 <- subset(error, percentLeft == "95")
+sp95 <- ggplot(error95, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "5% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+error90 <- subset(error, percentLeft == "90")
+sp90 <- ggplot(error90, aes(avgErr, stdErr)) + 
+  geom_point(aes(color = imputation, shape = model), size = 3) + 
+  labs(title = "10% Data Deletion") +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank())
+sp <- ggarrange(sp99, sp95, sp90, ncol = 3,
+                nrow = 1, common.legend = TRUE, legend = "bottom")
+new_sp <- annotate_figure(sp,
+                top = text_grob("Wage Analysis", face = "bold"),
+                left = "Standard Dev Error",
+                bottom = "Avg. Error")
+
+ggsave("Wage-avgSD.png", new_sp)
+```
+

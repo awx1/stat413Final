@@ -26,6 +26,8 @@ diabetes$class <- ifelse(diabetes$class == "tested_positive", 1, 0)
 ```
 
 ```{r}
+
+# LASSO for Diabetes 
 x <- as.matrix(select(diabetes, -c(class)))
 y <- as.matrix(select(diabetes, c(class))) 
 
@@ -41,6 +43,7 @@ lasso_fit$beta
 
 
 ```{r}
+# Modify for training 
 diabetes_final <- select(diabetes, -c(skin))
 diabetes_final$class <- as.factor(diabetes$class)
 ```
@@ -49,6 +52,7 @@ diabetes_final$class <- as.factor(diabetes$class)
 
 ```{r}
 
+# Random Forest for right m_try 
 set.seed(15)
 m_try_vec <- seq(1, 7)
 
@@ -75,6 +79,7 @@ for (m_try in m_try_vec){
 
 ```{r}
 
+# Cross validation for Gradient Boosting Machine 
 gbm_diabetes <- data.frame(diabetes_final)
 gbm_diabetes$class <- as.numeric(gbm_diabetes$class) - 1
 depth_vec <- seq(1, 8)
@@ -101,6 +106,8 @@ for (depth in depth_vec){
 ```{r}
 
 # Linear works the best! 
+
+# Trying SVVM
 svm_linear <- tune(svm, class ~., data = diabetes_final, kernel = "linear", 
      ranges = list(cost = c(1, 10, 25, 50, 100, 250, 300, 500)))
 
@@ -110,7 +117,7 @@ summary(svm_linear)
 ```
 
 ```{r}
-
+# Polynomial
 
 svm_polynomial <- tune(svm, class ~., data = diabetes_final, kernel = "polynomial", 
      ranges = list(cost = c(1, 10, 12), 
@@ -125,6 +132,8 @@ summary(svm_polynomial)
 
 
 ```{r}
+
+# Radial 
 svm_radial <- tune(svm, class ~., data = diabetes_final, kernel = "radial", 
      ranges = list(cost = c(1, 5, 10, 15), 
                    gamma = c(0.05, 0.20, 0.35, 0.5, 0.75, 1)))
@@ -134,6 +143,8 @@ summary(svm_radial)
 
 ```{r}
 set.seed(2)
+
+# KNN
 diabetes_X <- select(diabetes_final, -c(class))
 diabetes_y <- diabetes_final["class"][, 1]
 k_vec <- seq(1, 20)

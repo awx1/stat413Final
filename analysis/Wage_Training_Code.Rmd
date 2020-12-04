@@ -1,0 +1,179 @@
+---
+title: "STAT 413 Wage Datatset Analysis"
+author: "Michael Price"
+date: "11/23/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+library(ISLR)
+data(Wage)
+
+
+library(ggplot2)
+library(fastDummies)
+library(dplyr)
+library(glmnet)
+library(randomForest)
+
+library(gbm)
+```
+
+```{r}
+
+# EDA
+Wage <- select(Wage, -c(region, wage))
+```
+
+
+```{r}
+plot(Wage$age, Wage$logwage, pch = 19, col = "red")
+```
+
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = education) + geom_boxplot()
+```
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = race) + geom_boxplot()
+```
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = maritl) + geom_boxplot()
+```
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = jobclass) + geom_boxplot()
+```
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = health) + geom_boxplot()
+```
+
+```{r}
+ggplot(data = Wage) + aes(x = logwage, color = health_ins) + geom_boxplot()
+```
+
+
+```{r}
+
+# Make dummy variables 
+dummy_wage <- dummy_cols(Wage, select_columns = c("maritl", "race",
+                "education", "jobclass", "health", "health_ins")) %>%
+  select(-c("maritl", "race",
+                "education", "jobclass", "health", "health_ins", 
+            "maritl_5. Separated", "race_4. Other", "education_5. Advanced Degree", 
+            "jobclass_2. Information", "health_2. >=Very Good", "health_ins_2. No"))
+
+dummy_wage_X <- as.matrix(select(dummy_wage, -c(logwage)))
+dummy_wage_y <- as.matrix(select(dummy_wage, c(logwage))) 
+
+
+# Fit LASSO for feature selection
+lasso_wage <- cv.glmnet(dummy_wage_X, dummy_wage_y, family = "gaussian")
+
+lambda_min <- lasso_wage$lambda.min
+
+
+lasso_fit <- glmnet(dummy_wage_X, dummy_wage_y,
+                    family = "gaussian", lambda = lambda_min)
+
+lasso_fit$beta
+
+
+```
+
+
+```{r}
+# Change variables names 
+new_dummy_wage <- select(dummy_wage, -c("race_2. Black"))
+names(new_dummy_wage) <- c("year", "age", "logwage", "Never.Married",
+                           "Married", "Widowed", "Divorced", "White", "Asian", 
+                           "Not.HS.Grad", "HS.Grad", "Some.College", "College.Grad", 
+                           "Industrial", "Health.Not.Good", "health.ins")
+dummy_wage_y <- as.matrix(select(dummy_wage, c(logwage))) 
+```
+
+
+```{r}
+
+# Cross validation for random forest 
+mtry_vec <- c(2, 3, 4, 5, 6, 8, 10, 12)
+ntrees_vec <- seq(400, 600, 20)
+
+rf_wage_cv <- matrix(rep(0, length(mtry_vec) * length(ntrees_vec) * 3), ncol = 3)
+
+count <- 1
+for(mt in mtry_vec){
+  
+  for(nt in ntrees_vec){
+    
+    print(c(mt, nt, count))
+    rf <- randomForest(logwage ~., data = new_dummy_wage, mtry = mt, ntrees = nt)
+    
+    mse_rf <- mean((rf$predicted - dummy_wage_y)^2)
+    
+    rf_wage_cv[count, ] <- c(mt, nt, mse_rf)
+    
+    count <- count + 1
+    
+    
+  }
+}
+
+pos_of_min_rf <- which.min(rf_wage_cv[, 3])
+
+rf_wage_cv[pos_of_min_rf, ]
+
+
+
+
+```
+Best Model was mtry - 4 and ntrees - 480.00000000 with MSE 0.07729808
+
+```{r}
+
+
+# Gradient Boosting Cross Validation 
+depth_vec <- seq(1, 6)
+
+gbm_wage_cv <- matrix(rep(0, length(depth_vec) * 3), ncol = 3)
+
+
+
+count <- 1
+for(dpt in depth_vec){
+  
+  # Train GBM
+  
+    print(dpt)
+    gbm_res <- gbm(logwage ~., distribution = "gaussian", data = new_dummy_wage, 
+                    n.trees = 10000, interaction.depth = dpt, shrinkage = 0.01, 
+               cv.folds = 5)
+    
+   
+    cv_error <- gbm_res$cv.error
+    
+    min_cv_error <- min(cv_error)
+    min_error_pos <- which.min(cv_error)
+    
+    gbm_wage_cv[count, ] <- c(dpt, min_error_pos, min_cv_error)
+    
+    count <- count + 1
+
+}
+
+
+#6  467 0.07624525
+```
+Best model was depth 6 with 467 trees and MSE - 0.07624525
+
+

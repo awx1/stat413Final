@@ -11,6 +11,19 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
+```{r}
+library(mice)
+library(VIM)
+library(randomForest)
+library(gbm)
+library(dplyr)
+library(modeest)
+library(e1071)
+library(missForest)
+library(fastDummies)
+library(ISLR)
+library(class)
+```
 
 ```{r}
 deleteData_NA_grid <- function(data, percentLeft) {
@@ -38,8 +51,33 @@ return(list(data = data, NA_grid = na_grid))
 }
 ```
 
+
 ```{r}
-Ensmble_Imputation_Testing <- function(data, form_train, response, type, sim_number = 250,
+change_Wage <- function(data_set){
+  
+  # transfomation function for Wage 
+  dummy_wage <- dummy_cols(data_set, select_columns = c("maritl", "race",
+                "education", "jobclass", "health", "health_ins")) %>%
+  dplyr::select(-c("maritl", "race",
+                "education", "jobclass", "health", "health_ins", 
+            "maritl_5. Separated", "race_4. Other", "education_5. Advanced Degree", 
+            "jobclass_2. Information", "health_2. >=Very Good", "health_ins_2. No"))
+  
+  new_dummy_wage <- dplyr::select(dummy_wage, -c("race_2. Black"))
+  names(new_dummy_wage) <- c("year", "age", "logwage", "Never.Married",
+                           "Married", "Widowed", "Divorced", "White", "Asian", 
+                           "Not.HS.Grad", "HS.Grad", "Some.College", "College.Grad", 
+                           "Industrial", "Health.Not.Good", "health.ins")
+  
+  
+  return(new_dummy_wage)
+  
+}
+
+```
+
+```{r}
+Ensemble_Imputation_Testing <- function(data, form_train, response, type, sim_number = 250,
                                training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
                                num_impute = 5, maxiter = 10, percentLeft = 0.95, 
                                transformation = FALSE, transformation_function = NULL, 
@@ -279,7 +317,7 @@ for (s in 1:sim_number){
     
     
     impute_knn <- dplyr::select(impute_set, -c(response))
-    knn_test <- dplyr::select(test_set, - c(response))
+    knn_test <- dplyr::select(test_set, -c(response))
     
     class_training <- impute_set[response]
     
@@ -304,12 +342,76 @@ for (s in 1:sim_number){
 
 ```
 
+```{r}
+
+# Dataset and hyperparameters for diabetes
+diabetes_final <-  read.csv( "/Users/mpric/Documents/Semester 7 Classes/STAT 413/Final Project/stat413Final/data/diabetes.csv", header = TRUE)
+diabetes_final$class <- ifelse(diabetes_final$class == "tested_positive", 1, 0)
+
+diabetes_final <- dplyr::select(diabetes_final, -c(skin))
+diabetes_final[, "class"] <- as.factor(diabetes_final[, "class"])
+
+class_hyper_diabetes <- list(mtry = 3, rf_trees = 212, depth_gbm = 2, gbm_trees = 604, 
+           kernel = "linear", cost = 10, k_neighbor = 4)
+
+```
+
+```{r}
+# dataset and hyperparameters for Wage 
+data(Wage)
+final_wage <- dplyr::select(Wage, -c(wage, region))
+reg_hyper_Wage <- list(mtry = 4, rf_trees = 480, depth_gbm = 6, gbm_trees = 467)
+```
 
 
 ```{r}
-Ensmble_Imputation_Testing(data = final_wage, form_train = logwage ~., response = "logwage", type = "regression", sim_number = 5,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+
+# Ensemble Methods (Wage and Diabetes)
+ens_diabetes_95 <- Ensemble_Imputation_Testing(data = diabetes_final, form_train = class ~., response = "class", type = "classification", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+                               num_impute = 5, maxiter = 10, percentLeft = 0.95, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_diabetes, reg_hyper =NULL)
+
+write.csv(ens_diabetes_95, "ens_diabetes_95.csv")
+
+ens_diabetes_90 <- Ensemble_Imputation_Testing(data = diabetes_final, form_train = class ~., response = "class", type = "classification", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+                               num_impute = 5, maxiter = 10, percentLeft = 0.90, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_diabetes, reg_hyper =NULL)
+
+write.csv(ens_diabetes_90, "ens_diabetes_90.csv")
+
+ens_diabetes_99 <- Ensemble_Imputation_Testing(data = diabetes_final, form_train = class ~., response = "class", type = "classification", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+                               num_impute = 5, maxiter = 10, percentLeft = 0.99, 
+                               transformation = FALSE, transformation_function = NULL, 
+                               class_hyper = class_hyper_diabetes, reg_hyper =NULL)
+
+write.csv(ens_diabetes_99, "ens_diabetes_99.csv")
+
+ens_Wage_95 <- Ensemble_Imputation_Testing(data = final_wage, form_train = logwage ~., response = "logwage", type = "regression", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
                                num_impute = 5, maxiter = 10, percentLeft = 0.95, 
                                transformation = TRUE, transformation_function = change_Wage, 
                                class_hyper = NULL, reg_hyper =reg_hyper_Wage)
+
+write.csv(ens_Wage_95, "ens_Wage_95.csv")
+
+ens_Wage_90 <- Ensemble_Imputation_Testing(data = final_wage, form_train = logwage ~., response = "logwage", type = "regression", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+                               num_impute = 5, maxiter = 10, percentLeft = 0.90, 
+                               transformation = TRUE, transformation_function = change_Wage, 
+                               class_hyper = NULL, reg_hyper =reg_hyper_Wage)
+write.csv(ens_Wage_90, "ens_Wage_90.csv")
+
+ens_Wage_99 <- Ensemble_Imputation_Testing(data = final_wage, form_train = logwage ~., response = "logwage", type = "regression", sim_number = 100,  training_split = 0.8, knn_vec = c(3, 5), mf_tree_vec = c(100, 150), 
+                               num_impute = 5, maxiter = 10, percentLeft = 0.99, 
+                               transformation = TRUE, transformation_function = change_Wage, 
+                               class_hyper = NULL, reg_hyper =reg_hyper_Wage)
+
+write.csv(ens_Wage_99, "ens_Wage_99.csv")
+```
+
+```{r}
+
+
+
 ```
 
